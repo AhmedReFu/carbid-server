@@ -6,6 +6,8 @@ const cookieParser = require("cookie-parser");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 
+const clientPromise = require("./db");
+
 const port = process.env.PORT || 3000;
 
 const corsOptions = {
@@ -37,16 +39,10 @@ const verifyToken = (req, res, next) => {
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.8k7klrr.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
-const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
-});
 
 async function run() {
   try {
+    const client = await clientPromise;
     const bidsCollection = client.db("autobid").collection("bids");
     const allCollection = client.db("autobid").collection("allcars");
 
