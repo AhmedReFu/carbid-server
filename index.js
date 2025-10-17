@@ -15,7 +15,7 @@ const corsOptions = {
   origin: [
     "http://localhost:5173",
     "http://localhost:5174",
-    "https://agrotrade-a35fe.web.app",
+    "https://carbid-server.vercel.app",
   ],
   credentials: true,
   optionsSuccessStatus: 200,
