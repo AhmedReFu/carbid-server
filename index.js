@@ -1,15 +1,16 @@
 const express = require("express");
-const app = express();
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { ObjectId } = require("mongodb");
 require("dotenv").config();
 
-const clientPromise = require("./db");
+const clientPromise = require("./db"); // 👈 Mongo connection
 
+const app = express();
 const port = process.env.PORT || 3000;
 
+// ✅ CORS settings
 const corsOptions = {
   origin: [
     "http://localhost:5173",
@@ -23,29 +24,29 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
+// ✅ JWT Middleware
 const verifyToken = (req, res, next) => {
   const token = req.cookies?.token;
   if (!token) {
-    return res.status(401).send({ message: "Unauthorized access — No token found" });
+    return res.status(401).send({ message: "Unauthorized — No token found" });
   }
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
     if (err) {
-      return res.status(401).send({ message: "Unauthorized access — Invalid token" });
+      return res.status(401).send({ message: "Unauthorized — Invalid token" });
     }
     req.user = decoded;
     next();
   });
 };
 
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.8k7klrr.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
-
-async function run() {
+// ✅ Initialize after DB connection
+async function init() {
   try {
     const client = await clientPromise;
     const bidsCollection = client.db("autobid").collection("bids");
     const allCollection = client.db("autobid").collection("allcars");
 
+    // ==================== JWT ROUTES ====================
     app.post("/jwt", async (req, res) => {
       try {
         const user = req.body;
@@ -75,6 +76,7 @@ async function run() {
         .send({ success: true });
     });
 
+    // ==================== CAR ROUTES ====================
     app.get("/all-cars", async (req, res) => {
       const { filter, page = 0, size = 4, search, sort } = req.query;
       let query = {};
@@ -86,6 +88,7 @@ async function run() {
           { category: { $regex: search, $options: "i" } },
         ];
       }
+
       let sortOption = {};
       if (sort === "asc") sortOption = { deadline: 1 };
       else if (sort === "dsc") sortOption = { deadline: -1 };
@@ -122,8 +125,7 @@ async function run() {
 
     app.get("/car/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await allCollection.findOne(query);
+      const result = await allCollection.findOne({ _id: new ObjectId(id) });
       res.send(result);
     });
 
@@ -140,7 +142,7 @@ async function run() {
       try {
         const email = req.params.email;
         if (req.user?.email !== email) {
-          return res.status(403).send({ message: "Forbidden access" });
+          return res.status(403).send({ message: "Forbidden" });
         }
         const query = {
           $or: [{ seller_email: email }, { "buyer.email": email }],
@@ -148,29 +150,28 @@ async function run() {
         const result = await allCollection.find(query).toArray();
         res.send(result);
       } catch (error) {
-        res.status(500).send({ message: "Failed to fetch posted cars" });
+        res.status(500).send({ message: "Failed to fetch cars" });
       }
     });
 
     app.delete("/car/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const result = await allCollection.deleteOne(query);
+      const result = await allCollection.deleteOne({ _id: new ObjectId(id) });
       res.send(result);
     });
 
     app.put("/car/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const updatedCar = req.body;
-      if (!updatedCar.gallery_images) {
-        delete updatedCar.gallery_images;
-      }
-      const filter = { _id: new ObjectId(id) };
-      const updateDoc = { $set: updatedCar };
-      const result = await allCollection.updateOne(filter, updateDoc);
+      if (!updatedCar.gallery_images) delete updatedCar.gallery_images;
+      const result = await allCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updatedCar }
+      );
       res.send(result);
     });
 
+    // ==================== BIDS ====================
     app.post("/bid", verifyToken, async (req, res) => {
       const bidData = req.body;
       if (!bidData.bidder_email && bidData.email) {
@@ -197,24 +198,35 @@ async function run() {
     app.patch("/bid/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const { status } = req.body;
-      const filter = { _id: new ObjectId(id) };
-      const updateDoc = { $set: { status } };
-      const result = await bidsCollection.updateOne(filter, updateDoc);
+      const result = await bidsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } }
+      );
       res.send(result);
     });
 
-    await client.db("admin").command({ ping: 1 });
+    // ==================== ROOT ====================
+    app.get("/", (req, res) => {
+      res.send("🚀 AutoBid API — MongoDB Connected Successfully ✅");
+    });
+
+    // Optional test route
+    app.get("/test-db", async (req, res) => {
+      try {
+        const client = await clientPromise;
+        await client.db("admin").command({ ping: 1 });
+        res.send({ status: "ok ✅" });
+      } catch (e) {
+        res.status(500).send({ error: e.message });
+      }
+    });
   } catch (err) {
-    console.error("MongoDB Error:", err);
+    console.error("❌ MongoDB Init Error:", err);
   }
 }
 
-run().catch(console.dir);
-
-app.get("/", (req, res) => {
-  res.send("Welcome to AutoBid API — Secure JWT Server Running.");
-});
+init();
 
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`✅ Server running on port ${port}`);
 });
